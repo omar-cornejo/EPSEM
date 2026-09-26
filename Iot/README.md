@@ -21,7 +21,7 @@ Ver logs de Telegraf:
 docker-compose logs -f telegraf
 ```
 
-Acceder a Grafana en `http://localhost:3000` con usuario `admin` y contraseña `admin`.
+Acceder a Grafana en `http://localhost:3000` con usuario `admin` y contraseña `admin123`.
 
 Detener y eliminar:
 
