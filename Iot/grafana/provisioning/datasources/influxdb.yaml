@@ -1,0 +1,16 @@
+apiVersion: 1
+datasources:
+  - name: InfluxDB
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    basicAuth: false
+    isDefault: true
+    database: mqttdb
+    user: admin
+    secureJsonData:
+      password: adminpass
+    jsonData:
+      version: InfluxQL
+      httpMode: "POST"
+      timeInterval: "10s"
