@@ -1,0 +1,153 @@
+% LaTeX report generated from the project notes
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{parskip}
+\usepackage{listings}
+\geometry{margin=1in}
+\lstset{breaklines=true,basicstyle=\ttfamily\small}
+
+\title{IoT Lab 1 — MQTT Ingestion and Visualization}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This short report summarizes the work performed to ingest DHT sensor data via MQTT, process it with Telegraf, store it in InfluxDB, and visualize it with Grafana. The document includes key decisions, problems encountered and solved, results, and concise conclusions. Image placeholders are included for figures generated during the project.
+\end{abstract}
+
+\section*{Work Done}
+The following points describe the main tasks, decisions, rationale and noteworthy details from the development process.
+
+\begin{itemize}
+  \item \textbf{Arduino / Sensor integration:}
+    \begin{itemize}
+      \item Implemented DHT11 reading using the \texttt{DHT.h} library. Readings validate with \texttt{isnan()} and the code retries or skips invalid values.
+      \item Decision: publish a single JSON payload per device to a single topic (e.g. \texttt{sensor/esp01}). Reason: a single JSON topic simplifies downstream parsing and reduces the number of measurements and queries.
+    \end{itemize}
+
+  \item \textbf{MQTT broker (Mosquitto) in Docker:}
+    \begin{itemize}
+      \item Ran Mosquitto inside Docker for reproducibility, isolation, and easy updates.
+      \item Persisted configuration and data using bind mounts to the host file system.
+    \end{itemize}
+
+  \item \textbf{Telegraf configuration and data treatment:}
+    \begin{itemize}
+      \item Configured the MQTT consumer to subscribe to \texttt{sensor/\#} and set \texttt{data\_format = "json"} so JSON keys map to fields and tags.
+      \item Promoted \texttt{device} and \texttt{location} to \texttt{tag\_keys} for efficient grouping and filtering in InfluxDB/Grafana.
+      \item Set \texttt{name\_override = "mqtt\_consumer"} to keep a consistent measurement name.
+      \item Problem found: initial config used \texttt{data\_format = "value"} which failed for JSON payloads; solution was to switch to \texttt{"json"}.
+    \end{itemize}
+
+  \item \textbf{InfluxDB and Grafana provisioning:}
+    \begin{itemize}
+      \item Used InfluxDB 1.8 with InfluxQL for compatibility with existing dashboards.
+      \item Ensured Grafana provisioning files contain \texttt{secureJsonData.password} and correct datasource versioning.
+      \item Problem found: Grafana query parsing errors — debugged using the Influx CLI and the Grafana provisioning API, then corrected quoting and query macros.
+    \end{itemize}
+
+  \item \textbf{Dashboards and visualizations:}
+    \begin{itemize}
+      \item Created a time-series dashboard with separate panels for temperature and humidity.
+      \item Planned a Geomap panel using numeric \texttt{lat} and \texttt{lon} fields and the latest temperature as the value for styling.
+    \end{itemize}
+\end{itemize}
+
+\section*{Results}
+Summary of results and the assets produced.
+
+\begin{itemize}
+  \item \textbf{Data ingestion:} Telegraf successfully writes to InfluxDB (observed HTTP 204 on POST). Influx CLI queries return expected values, for example the last temperature and coordinates per device.
+
+  \item \textbf{Visualizations created:}
+    \begin{itemize}
+      \item \textbf{Temperature timeseries:} a Grafana timeseries panel plotting mean values aggregated by the dashboard interval. Placeholder image below.
+      \begin{figure}[ht]
+        \centering
+        \IfFileExists{figures/temperature_timeseries.png}{%
+          \includegraphics[width=0.8\linewidth]{figures/temperature_timeseries.png}
+        }{%
+          \fbox{\parbox{0.8\linewidth}{\centering Placeholder: temperature timeseries image}}
+        }
+        \caption{Temperature timeseries (replace with generated plot).}
+        \label{fig:temp-timeseries}
+      \end{figure}
+
+      \item \textbf{Humidity timeseries:} similar to temperature, with percentage unit and thresholds. Placeholder image below.
+      \begin{figure}[ht]
+        \centering
+        \IfFileExists{figures/humidity_timeseries.png}{%
+          \includegraphics[width=0.8\linewidth]{figures/humidity_timeseries.png}
+        }{%
+          \fbox{\parbox{0.8\linewidth}{\centering Placeholder: humidity timeseries image}}
+        }
+        \caption{Humidity timeseries (replace with generated plot).}
+        \label{fig:hum-timeseries}
+      \end{figure}
+
+      \item \textbf{Geomap (planned):} a map panel that expects a table with columns \texttt{lat}, \texttt{lon}, and a value (e.g. last(temperature)). Insert a screenshot after provisioning.
+      \begin{figure}[ht]
+        \centering
+        \IfFileExists{figures/geomap_placeholder.png}{%
+          \includegraphics[width=0.8\linewidth]{figures/geomap_placeholder.png}
+        }{%
+          \fbox{\parbox{0.8\linewidth}{\centering Placeholder: geomap image}}
+        }
+        \caption{Geomap placeholder. Query should return \texttt{lat}, \texttt{lon}, and the value per device.}
+        \label{fig:geomap}
+      \end{figure}
+    \end{itemize}
+
+  \item \textbf{Example JSON payload used for tests:}
+  \begin{lstlisting}
+{"device":"esp01","location":"Room1","lat":41.3879,"lon":2.16992,"temperature":24.5,"humidity":50.3}
+  \end{lstlisting}
+
+  \item \textbf{Example test commands (run on host):}
+  \begin{lstlisting}
+mosquitto_pub -h localhost -t sensor/esp01 -m '{"device":"esp01","location":"Room1","lat":41.3879,"lon":2.16992,"temperature":24.5,"humidity":50.3}'
+docker compose exec influxdb influx -username admin -password adminpass -database mqttdb -execute "SELECT last(\"temperature\"), last(\"lat\"), last(\"lon\") FROM \"mqtt_consumer\" WHERE \"device\"='esp01'"
+  \end{lstlisting}
+\end{itemize}
+
+\section*{Answers to the Questions}
+Concise, direct answers to the original project questions.
+
+\begin{itemize}
+  \item \textbf{Why is MQTT suitable for IoT?}
+    \begin{itemize}
+      \item MQTT is lightweight and has a small header, reducing bandwidth and power use — ideal for battery-powered sensors.
+      \item The pub/sub model decouples producers and consumers, reducing polling and unnecessary traffic.
+    \end{itemize}
+
+  \item \textbf{How does pub/sub improve efficiency?}
+    \begin{itemize}
+      \item Publishers send updates only when values change; subscribers receive updates only when published, avoiding repeated requests.
+    \end{itemize}
+
+  \item \textbf{Advantages of running Mosquitto in Docker:}
+    \begin{itemize}
+      \item Simple installation, isolation from host, reproducible deployment, persistent volumes for config/data, and easy updates.
+    \end{itemize}
+\end{itemize}
+
+\section*{Conclusions}
+The chosen design (JSON single-topic payloads, Telegraf JSON ingestion, device/location as tags) simplifies ingestion and dashboarding, enables a Geomap visualization using numeric coordinates, and reduces parsing complexity. Recommended next steps:
+
+\begin{itemize}
+  \item Provision a Grafana Geomap dashboard JSON using a table query that returns \texttt{lat}, \texttt{lon}, and the latest \texttt{temperature} per device.
+  \item Harden MQTT with authentication and TLS before exposing the broker to untrusted networks.
+  \item Store device metadata in a small static measurement or external config for large fleets.
+\end{itemize}
+
+\vfill
+\noindent Generated report. Replace images in the \texttt{figures/} directory with the actual exported dashboard screenshots or plots.
+
+\end{document}
