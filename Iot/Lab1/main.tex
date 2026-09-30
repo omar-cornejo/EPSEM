@@ -1,0 +1,236 @@
+% Report for IoT Lab 1 -- Activity 1
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{pgfplots}
+\usepackage{listings}
+\usepackage{parskip}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\captionsetup[subfigure]{font=small}
+\usepackage{hyperref}
+\usepackage{textcomp}
+\pgfplotsset{compat=1.18}
+\lstset{breaklines=true,basicstyle=\ttfamily\small,frame=single,columns=fullflexible}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+
+\title{\textbf{Activity 1: MQTT communication with ESP32 and server}}
+\author{Omar Antonio Cornejo Vargas}
+\date{1 October 2026}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+The objective of this activity is to build a complete IoT telemetry chain for a DHT11
+sensor connected to an ESP32: the board reads the temperature and the relative humidity,
+publishes them over MQTT, a server-side pipeline stores the measurements in a time-series
+database, and a dashboard displays them graphically.
+
+The architecture used is a publish/subscribe pipeline in which every component runs in a
+Docker container, so the whole system is reproducible and isolated from the host:
+
+\begin{center}
+\small
+\fbox{\shortstack{ESP32 + DHT11}} $\rightarrow$
+\fbox{\shortstack{Mosquitto\\(broker)}} $\rightarrow$
+\fbox{\shortstack{Telegraf\\(MQTT consumer)}} $\rightarrow$
+\fbox{\shortstack{InfluxDB\\(storage)}} $\rightarrow$
+\fbox{\shortstack{Grafana\\(dashboard)}}
+\end{center}
+
+Mosquitto was selected as the broker, Telegraf as the bridge between MQTT and the database,
+InfluxDB~1.8 as the storage engine (InfluxQL) and Grafana for the visualization. This report
+describes the work done, the key decisions taken and the problems found, presents the
+results obtained, answers the questions of the activity and ends with the conclusions.
+
+\section{Work Done}
+
+\subsection{DHT sensor communication}
+
+The firmware (\texttt{sketch\_sep22b/allcode.ino}) uses the \texttt{DHT.h} library to read the
+DHT11 sensor connected to pin~33. Values are validated with \texttt{isnan()} before anything is sent. \textbf{Decision:} the sensor is
+polled in the main \texttt{loop()} with a 1~s delay, keeping the readings meaningful without flooding the
+broker.
+
+\subsection{MQTT sending}
+
+The board connects to the broker with \texttt{WiFiClient} and \texttt{PubSubClient}, and
+reconnects automatically if the connection is lost (checked on every loop iteration).
+
+\textbf{Decision: publish a single JSON payload to a single topic} instead of one topic per
+variable. The first version of the firmware published two topics
+(\texttt{sensor/temperature} and \texttt{sensor/humidity}) with plain numeric values. This
+was changed to a single topic \texttt{sensor/esp01} carrying a JSON object with the two
+measurements. \textbf{Reason:} with one topic and one JSON object the broker carries a single
+message per reading, Telegraf creates a single measurement with two fields.
+
+\subsection{Data treatment with Telegraf (MQTT consumer)}
+
+Telegraf is the bridge between the broker and the database. It runs the
+\texttt{inputs.mqtt\_consumer} plugin, which opens a persistent MQTT connection to Mosquitto
+and subscribes to \texttt{sensor/\#}, the wildcard that matches any topic under \texttt{sensor/}.
+With that subscription, every message published by the ESP32 is received without having to
+configure anything new in the pipeline, and if a second sensor were added publishing on
+\texttt{sensor/esp02} it would also be ingested.
+
+The \texttt{data\_format = "json"} option tells Telegraf that the payload is a JSON object
+instead of a bare value, so each key of the object is turned into a field of the metric:
+\texttt{temperature} and \texttt{humidity}. The option \texttt{name\_override =
+"mqtt\_consumer"} fixes the name of the metric, so the measurements do not depend on the topic
+name and InfluxDB always receives the same measurement. Therefore one message received from
+the topic \texttt{sensor/esp01} is converted into a metric that contains two fields and one
+tag, \texttt{host}, which identifies the container that produced the data:
+
+\begin{lstlisting}
+{"temperature":24.10,"humidity":76.00}  ->  fields: temperature, humidity   tag: host
+\end{lstlisting}
+
+\textbf{Problem found:} the initial configuration used \texttt{data\_format = "value"}, which
+only accepts a bare number, so nothing was written when the JSON payload was published.
+\textbf{Solution:} switch to \texttt{"json"} and remove the per-topic filters.
+
+\subsection{Data treatment with InfluxDB (storage)}
+
+The \texttt{outputs.influxdb} plugin sends every metric to InfluxDB over HTTP. In that protocol the name of the measurement comes first, the tags follow after it,
+and then the fields with their values, so the message shown above is stored as:
+
+\begin{lstlisting}
+mqtt_consumer,host=8fd0addeff46 temperature=24.1,humidity=76 1790785562000000000
+\end{lstlisting}
+
+The temperature and the humidity are stored as two float fields of the same
+measurement and share the timestamp of the MQTT message, which means that every reading is
+kept as one point and can be queried directly, for example with
+\texttt{SELECT last("temperature"), last("humidity") FROM "mqtt\_consumer"}.
+
+\subsection{Visualization (Grafana)}
+
+Grafana is provisioned with an InfluxDB datasource and a file-provisioned dashboard with two time-series
+panels, one for temperature (~$^\circ$C) and one for humidity (\%), both aggregating with
+\texttt{mean()} over the dashboard interval.
+
+\subsection{Deployment and code}
+
+Everything described above is packaged in a single \texttt{docker-compose.yml}: the broker,
+the database, the consumer and the dashboard are defined together, so the whole server side
+is started with one command, \texttt{docker compose up -d}, and stopped with
+\texttt{docker compose down}. The code is available at
+\url{https://github.com/omar-cornejo/EPSEM}.
+
+\section{Results}
+
+The measurements flow end to end: in the last ten minutes of the session InfluxDB stored
+580 points in the measurement \texttt{mqtt\_consumer}, with a mean temperature of
+24.44~$^\circ$C and a mean humidity of 78.9\%.
+
+Figures~\ref{fig:temp} and~\ref{fig:hum} show the last ten minutes of that stream, averaged
+in one-minute buckets and drawn side by side. The values were exported directly from
+InfluxDB with the \texttt{influx} CLI and saved in \texttt{data/sensor.csv}.
+
+In the exported data the temperature stays between 24.1 and 25.7~$^\circ$C and the humidity
+between 77\% and 90\%, both values dropping after a short peak and then staying flat, which
+is consistent with the two fields being measured in the same reading.
+
+\begin{figure}[ht]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=\textwidth, height=5.2cm,
+    symbolic x coords={18:36,18:37,18:38,18:39,18:40,18:41,18:42,18:43,18:44,18:45,18:46},
+    xtick={18:36,18:38,18:40,18:42,18:44,18:46},
+    xlabel={Time (1-minute buckets)},
+    ylabel={Temperature ($^\circ$C)},
+    ymin=20, ymax=30,
+    grid=both, grid style={gray!25},
+    tick label style={font=\scriptsize}, label style={font=\scriptsize},
+]
+\addplot+[thick,color=orange!85!black,mark=*] table [col sep=comma, x=time, y=temperature] {data/sensor.csv};
+\end{axis}
+\end{tikzpicture}
+\caption{Temperature stored in InfluxDB, stable around 25~$^\circ$C indoors.}
+\label{fig:temp}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=\textwidth, height=5.2cm,
+    symbolic x coords={18:36,18:37,18:38,18:39,18:40,18:41,18:42,18:43,18:44,18:45,18:46},
+    xtick={18:36,18:38,18:40,18:42,18:44,18:46},
+    xlabel={Time (1-minute buckets)},
+    ylabel={Relative humidity (\%)},
+    ymin=60, ymax=100,
+    grid=both, grid style={gray!25},
+    tick label style={font=\scriptsize}, label style={font=\scriptsize},
+]
+\addplot+[thick,color=teal!70!black,mark=square*] table [col sep=comma, x=time, y=humidity] {data/sensor.csv};
+\end{axis}
+\end{tikzpicture}
+\caption{Relative humidity, following the same shape with a wider spread.}
+\label{fig:hum}
+\end{subfigure}
+\caption{Last ten minutes of the stream stored in InfluxDB.}
+\label{fig:plots}
+\end{figure}
+
+The Grafana dashboard shows the same data over a longer window, one hour, which makes it
+possible to check whether the values in the room change abruptly. Figure~\ref{fig:grafana}
+shows the two panels of that dashboard. When the temperature or the humidity of the
+environment changes drastically the corresponding graph spikes. Normally both graphs stay flat and stable,
+which is the expected behaviour of a DHT11 placed in a room.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{\textwidth}
+\centering
+\includegraphics[width=\textwidth,height=11.4cm,keepaspectratio]{image_temperature.png}
+\caption{Grafana temperature panel over the last hour.}
+\label{fig:grafana-t}
+\end{subfigure}
+
+\begin{subfigure}[b]{\textwidth}
+\centering
+\includegraphics[width=\textwidth,height=11.4cm,keepaspectratio]{image_humidity.png}
+\caption{Grafana humidity panel over the last hour.}
+\label{fig:grafana-h}
+\end{subfigure}
+\caption{The two panels of the Grafana dashboard over the last hour of data.}
+\label{fig:grafana}
+\end{figure}
+
+\section{Answers to the Questions}
+
+\textbf{Why is MQTT suitable for IoT?} MQTT is designed for constrained devices: header
+is only a few bytes and there is no HTTP overhead, so a reading costs very little bandwidth
+and power, which matters for battery-powered nodes.
+
+\textbf{How does pub/sub improve efficiency?} The publisher does not know or address subscribers: it simply publishes to a topic, and the broker delivers the message to whoever
+is subscribed. The sensor therefore publishes only when it has a new reading, instead of
+polling a server or opening a connection per reading, and the same message can feed several
+consumers (storage, dashboard, alerts) without duplicating traffic. Communication is
+asynchronous, so neither side has to wait for the other.
+
+\textbf{Advantages of running Mosquitto in Docker.} The installation is reproducible from a
+single \texttt{docker-compose.yml}, the broker is isolated from the rest of the host system,
+configuration and data live in bind-mounted volumes that survive container restarts,
+updating or testing another broker version is a matter of changing the image tag, and the
+same file lets any other member of the course run the exact same environment.
+
+\section{Conclusions}
+
+The activity has been completed: the ESP32 reads the DHT11, publishes a single JSON payload
+with the temperature and the humidity to \texttt{sensor/esp01}, and the Docker pipeline
+(Telegraf, InfluxDB, Grafana) stores and visualizes the data, with the results verified both
+from Grafana and from the InfluxDB command line.
+
+\end{document}
