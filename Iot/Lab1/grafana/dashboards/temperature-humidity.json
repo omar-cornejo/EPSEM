@@ -89,7 +89,7 @@
             "type": "influxdb",
             "uid": "P951FEA4DE68E13C5"
           },
-          "query": "SELECT mean(\"value\") FROM \"mqtt_consumer\" WHERE \"topic\" = 'sensor/temperature' AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "query": "SELECT mean(\"temperature\") FROM \"mqtt_consumer\" WHERE $timeFilter GROUP BY time($__interval) fill(null)",
           "rawQuery": true,
           "refId": "A",
           "resultFormat": "time_series"
@@ -185,7 +185,7 @@
             "type": "influxdb",
             "uid": "P951FEA4DE68E13C5"
           },
-          "query": "SELECT mean(\"value\") FROM \"mqtt_consumer\" WHERE \"topic\" = 'sensor/humidity' AND $timeFilter GROUP BY time($__interval) fill(null)",
+          "query": "SELECT mean(\"humidity\") FROM \"mqtt_consumer\" WHERE $timeFilter GROUP BY time($__interval) fill(null)",
           "rawQuery": true,
           "refId": "A",
           "resultFormat": "time_series"

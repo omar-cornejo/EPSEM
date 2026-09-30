@@ -1,6 +1,5 @@
 // #include <WiFi.h>
 
-// // Cambia estos datos por los de tu Wi-Fi
 // const char* WIFI_SSID = "Omar_wifi";
 // const char* WIFI_PASSWORD = "xxx";
 
@@ -32,5 +31,5 @@
 //     Serial.println("Wi-Fi desconectado");
 //   }
 
-//   delay(5000);
+//   delay(1000);
 // }
