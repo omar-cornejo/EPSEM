@@ -93,7 +93,7 @@ The gateway also needs Wi-Fi: it is the only board connected to the network.
 | `influxdb/` | Bind-mounted InfluxDB data directory (`meta.db`, `wal/`, `data/`). Runtime data, not source code; it can be deleted to start from an empty database. |
 | `grafana/` | `dashboards/lora-weather.json` (dashboard with the four time-series panels), `provisioning/datasources/influxdb.yaml` (InfluxDB datasource with the fixed uid `influxdb-lora`) and `provisioning/dashboards/sample-dashboard.yaml` (dashboard provider that loads the JSON from disk). |
 | `data/` | CSV exports of the measurements (`packet_loss.py --csv`), used by the pgfplots figures of the report. |
-| `ACTIVITY1_2_CIIOT..pdf` | Statement of the activity. |
+| `ACTIVITY1_2_CIIOT.pdf` | Statement of the activity. |
 
 ## Flashing the firmware
 
