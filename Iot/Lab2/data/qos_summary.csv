@@ -1,0 +1,4 @@
+idx,scenario,first_seq,last_seq,sent,received,lost,loss_pct,rssi_mean,rssi_min,snr_mean,snr_min
+0,close,10,18,9,9,0,0.0,-25.2,-28,10.0,8.8
+1,far_foil_partial,230,240,11,11,0,0.0,-111.5,-118,2.8,-2.7
+2,far_foil_full,280,289,10,8,2,20.0,-97.8,-122,4.5,-5.5

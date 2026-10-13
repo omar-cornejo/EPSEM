@@ -1,0 +1,4 @@
+idx,config,bw_khz,sf,bitrate_kbps,airtime_ms,energy_mj,rssi_close,snr_close,rssi_medium,snr_medium,rssi_far,snr_far
+0,BW125-SF7,125,7,5.47,82.2,21.69,-16.2,9.7,-33,9.7,-48.3,9.7
+1,BW250-SF9,250,9,3.52,133.6,35.28,-29.2,12.6,-37.8,13.3,-50.6,13.2
+2,BW500-SF9,500,9,7.03,66.8,17.64,-25.2,7.8,-37.6,7.7,-50,7.3

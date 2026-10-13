@@ -1,0 +1,4 @@
+tx_power_dbm,i_tx_ma,airtime_ms,energy_mj,rssi_close,snr_close,rssi_medium,snr_medium,rssi_far,snr_far
+7,45,83.0,12.325,-25.5,10.0,-35.2,9.4,-52.1,9.7
+10,55,83.0,15.064,-21.3,10.0,-31.8,9.7,-46.6,9.8
+14,80,83.0,21.912,-23.2,9.4,-31.5,9.4,-46.2,9.5
